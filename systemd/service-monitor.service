@@ -1,0 +1,14 @@
+[Unit]
+Description=Linux Service Health Check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/service-monitor/.env
+ExecStart=/usr/bin/python3 /opt/service-monitor/src/monitor.py --config /etc/service-monitor/config.json --env /etc/service-monitor/.env
+
+[Install]
+WantedBy=multi-user.target
