@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Linux Service Health Check
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+Unit=service-monitor.service
+
+[Install]
+WantedBy=timers.target
