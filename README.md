@@ -102,6 +102,30 @@ systemctl status service-monitor.timer
 journalctl -u service-monitor.service -f
 ```
 
+## 版本更新建議（已在運行中的主機）
+
+1) 暫停 timer（避免更新時觸發檢查）
+```bash
+sudo systemctl disable --now service-monitor.timer
+```
+
+2) 更新程式碼
+```bash
+sudo cp -R src /opt/service-monitor/
+```
+
+3) 若 systemd unit 有更新，請重新覆蓋並 reload
+```bash
+sudo cp systemd/service-monitor.service /etc/systemd/system/service-monitor.service
+sudo cp systemd/service-monitor.timer /etc/systemd/system/service-monitor.timer
+sudo systemctl daemon-reload
+```
+
+4) 重新啟動 timer
+```bash
+sudo systemctl enable --now service-monitor.timer
+```
+
 ## 重要行為說明
 
 - 當服務連續失敗達到 `failures_before_restart` 時，會執行 `systemctl restart <service>`，並執行 `post_restart_commands`。
