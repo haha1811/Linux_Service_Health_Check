@@ -58,6 +58,12 @@ def is_service_active(service_name: str) -> bool:
     return result.returncode == 0
 
 
+def is_port_open(host: str, port: int, timeout: float = 3.0) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        return sock.connect_ex((host, port)) == 0
+
+
 def restart_service(service_name: str) -> subprocess.CompletedProcess:
     return run_command(["systemctl", "restart", service_name])
 
@@ -177,7 +183,7 @@ def update_service_state(
     service_state["last_checked"] = now_ts
 
     if active:
-        if service_state.get("status") == "down":
+        if service_state.get("status") == "down" and service_state.get("alert_sent"):
             subject = format_subject("RECOVERED", service_name, host)
             body = format_body("RECOVERED", service_name, host)
             send_email(provider, env, subject, body)
@@ -211,6 +217,71 @@ def update_service_state(
     return service_state
 
 
+def update_port_state(
+    port: int,
+    port_config: Dict[str, Any],
+    port_state: Dict[str, Any],
+    provider: str,
+    env: Dict[str, str],
+    host: str,
+) -> Dict[str, Any]:
+    interval_seconds = int(port_config.get("check_interval_seconds", 30))
+    fail_restart = int(port_config.get("failures_before_restart", 0))
+    fail_alert = int(port_config.get("failures_before_alert", 3))
+    restart_commands = port_config.get("restart_commands", [])
+    target_host = port_config.get("host", "127.0.0.1")
+    now_ts = datetime.now(timezone.utc).timestamp()
+
+    if not should_check(port_state, interval_seconds, now_ts):
+        return port_state
+
+    active = is_port_open(target_host, port)
+    port_state["last_checked"] = now_ts
+
+    port_label = f"port {port}"
+    if target_host != "127.0.0.1":
+        port_label = f"port {port} ({target_host})"
+
+    if active:
+        if port_state.get("status") == "down" and port_state.get("alert_sent"):
+            subject = format_subject("RECOVERED", port_label, host)
+            body = format_body("RECOVERED", port_label, host)
+            send_email(provider, env, subject, body)
+        port_state.update(
+            {
+                "status": "up",
+                "consecutive_failures": 0,
+                "alert_sent": False,
+            }
+        )
+        return port_state
+
+    consecutive_failures = int(port_state.get("consecutive_failures", 0)) + 1
+    port_state["consecutive_failures"] = consecutive_failures
+    port_state["status"] = "down"
+
+    if fail_restart > 0 and consecutive_failures == fail_restart:
+        port_state["last_restart_commands"] = []
+        for command in restart_commands:
+            result = run_shell(command)
+            port_state["last_restart_commands"].append(
+                {
+                    "command": command,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            )
+
+    if consecutive_failures >= fail_alert and not port_state.get("alert_sent"):
+        subject = format_subject("ALERT", port_label, host)
+        body = format_body("ALERT", port_label, host)
+        send_email(provider, env, subject, body)
+        port_state["alert_sent"] = True
+
+    return port_state
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Monitor systemd services and send alerts.")
     parser.add_argument("--config", required=True, help="Path to config.json")
@@ -221,9 +292,11 @@ def main() -> int:
     provider = config.get("email_provider", "sendgrid").lower()
     state_path = config.get("state_path", "/var/lib/service-monitor/state.json")
     services = config.get("services", {})
+    ports = config.get("ports", {})
     if not services:
-        print("No services configured.", file=sys.stderr)
-        return 1
+        if not ports:
+            print("No services or ports configured.", file=sys.stderr)
+            return 1
 
     env = load_env(args.env)
     host = socket.gethostname()
@@ -240,6 +313,19 @@ def main() -> int:
             host,
         )
         state[service_name] = updated_state
+
+    for port_key, port_config in ports.items():
+        port = int(port_key)
+        port_state = state.get(f"port:{port_key}", {})
+        updated_state = update_port_state(
+            port,
+            port_config or {},
+            port_state,
+            provider,
+            env,
+            host,
+        )
+        state[f"port:{port_key}"] = updated_state
 
     save_json(state_path, state)
     return 0
