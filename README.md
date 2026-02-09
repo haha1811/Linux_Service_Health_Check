@@ -137,5 +137,5 @@ sudo systemctl enable --now service-monitor.timer
 ## 手動執行
 
 ```bash
-python3 src/monitor.py --config /etc/service-monitor/config.json --env /etc/service-monitor/.env
+sudo python3 src/monitor.py --config /etc/service-monitor/config.json --env /etc/service-monitor/.env
 ```
