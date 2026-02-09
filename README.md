@@ -1,10 +1,11 @@
 # Linux Service Health Check
 
-這個專案會監控 Linux 上的 systemd 服務名稱，當服務異常時依照條件寄出告警信件，並在符合條件時自動重啟服務。支援 SendGrid（預設）與 SMTP（例如 Gmail）。
+這個專案會監控 Linux 上的 systemd 服務名稱與本機 TCP port，當服務或連接埠異常時依照條件寄出告警信件，並在符合條件時自動重啟服務或執行自訂指令。支援 SendGrid（預設）與 SMTP（例如 Gmail）。
 
 ## 功能重點
 
 - 監控 systemd 服務（例如 `n8n.service`）
+- 監控本機 TCP port（例如 `80`、`5678`）
 - 每個服務可設定自己的監控頻率、告警次數、重啟次數
 - 服務恢復時只寄一次「恢復通知」
 - 支援重啟後執行自訂指令（例如 `docker compose up -d`）
@@ -47,6 +48,12 @@ sudo cp examples/config.json /etc/service-monitor/config.json
   - `failures_before_restart`: 連續失敗幾次後自動重啟
   - `failures_before_alert`: 連續失敗幾次後寄送告警
   - `post_restart_commands`: 重啟後額外要執行的指令（可留空）
+- `ports`: 以 port 號碼為 key（只檢查 localhost）
+  - `check_interval_seconds`: 監控頻率（秒）
+  - `failures_before_restart`: 連續失敗幾次後執行 `restart_commands`（0 表示不執行）
+  - `failures_before_alert`: 連續失敗幾次後寄送告警
+  - `host`: 監控主機（預設 `127.0.0.1`）
+  - `restart_commands`: 需要執行的指令（可留空）
 
 ### 3) 設定 `.env`
 
@@ -98,6 +105,7 @@ journalctl -u service-monitor.service -f
 ## 重要行為說明
 
 - 當服務連續失敗達到 `failures_before_restart` 時，會執行 `systemctl restart <service>`，並執行 `post_restart_commands`。
+- 當 port 連續失敗達到 `failures_before_restart` 時，會執行 `restart_commands`（若有設定）。
 - 當服務連續失敗達到 `failures_before_alert` 時，會寄出告警信件（只寄一次）。
 - 當服務恢復為正常狀態時會寄出「恢復通知」（只寄一次）。
 
