@@ -1,0 +1,38 @@
+{
+  "email_provider": "sendgrid",
+  "state_path": "/var/lib/service-monitor/state.json",
+  "services": {
+    "n8n.service": {
+      "check_interval_seconds": 30,
+      "failures_before_restart": 2,
+      "failures_before_alert": 3,
+      "post_restart_commands": [
+        "docker compose up -d --force-recreate"
+      ]
+    },
+    "nginx.service": {
+      "check_interval_seconds": 15,
+      "failures_before_restart": 1,
+      "failures_before_alert": 2,
+      "post_restart_commands": []
+    }
+  },
+  "ports": {
+    "80": {
+      "check_interval_seconds": 10,
+      "failures_before_alert": 2,
+      "failures_before_restart": 0,
+      "host": "127.0.0.1",
+      "restart_commands": []
+    },
+    "5678": {
+      "check_interval_seconds": 15,
+      "failures_before_alert": 2,
+      "failures_before_restart": 1,
+      "host": "127.0.0.1",
+      "restart_commands": [
+        "systemctl restart n8n.service"
+      ]
+    }
+  }
+}
