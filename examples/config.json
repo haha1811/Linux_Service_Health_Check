@@ -1,5 +1,6 @@
 {
   "email_provider": "sendgrid",
+  "time_zone": "Asia/Taipei",
   "state_path": "/var/lib/service-monitor/state.json",
   "services": {
     "n8n.service": {

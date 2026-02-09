@@ -6,8 +6,13 @@ import shlex
 import socket
 import subprocess
 import sys
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import datetime, timedelta, timezone, tzinfo
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - fallback for older environments
+    ZoneInfo = None
 
 
 def load_env(env_path: str) -> Dict[str, str]:
@@ -41,8 +46,14 @@ def save_json(path: str, payload: Any) -> None:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def resolve_time_zone(name: str) -> Tuple[str, tzinfo]:
+    if name == "UTC":
+        return "UTC", timezone.utc
+    if name == "Asia/Taipei":
+        if ZoneInfo is not None:
+            return "Asia/Taipei", ZoneInfo("Asia/Taipei")
+        return "Asia/Taipei", timezone(timedelta(hours=8))
+    raise ValueError(f"Unsupported time_zone: {name}. Supported values: UTC, Asia/Taipei")
 
 
 def run_command(command: List[str]) -> subprocess.CompletedProcess:
@@ -83,12 +94,23 @@ def format_subject(status: str, service_name: str, host: str) -> str:
     return f"[{prefix}] {service_name} on {host}"
 
 
-def format_body(prefix: str, service_name: str, host: str) -> str:
-    timestamp = utc_now()
+def format_body(
+    prefix: str,
+    service_name: str,
+    host: str,
+    time_zone: str = "Asia/Taipei",
+    now_dt: Optional[datetime] = None,
+) -> str:
+    label, tzinfo = resolve_time_zone(time_zone)
+    if now_dt is None:
+        now_dt = datetime.now(tzinfo)
+    elif now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=tzinfo)
+    timestamp = now_dt.astimezone(tzinfo).isoformat()
     return (
         f"Service: {service_name}\n"
         f"Host: {host}\n"
-        f"Time (UTC): {timestamp}\n"
+        f"Time ({label}): {timestamp}\n"
         f"Status: {prefix}\n"
     )
 
@@ -180,6 +202,7 @@ def update_service_state(
     provider: str,
     env: Dict[str, str],
     host: str,
+    time_zone: str,
 ) -> Dict[str, Any]:
     interval_seconds = int(service_config.get("check_interval_seconds", 30))
     fail_restart = int(service_config.get("failures_before_restart", 2))
@@ -196,7 +219,7 @@ def update_service_state(
     if active:
         if service_state.get("status") == "down" and service_state.get("alert_sent"):
             subject = format_subject("RECOVERED", service_name, host)
-            body = format_body("RECOVERED", service_name, host)
+            body = format_body("RECOVERED", service_name, host, time_zone=time_zone)
             send_email(provider, env, subject, body)
         service_state.update(
             {
@@ -221,7 +244,7 @@ def update_service_state(
 
     if consecutive_failures >= fail_alert and not service_state.get("alert_sent"):
         subject = format_subject("ALERT", service_name, host)
-        body = format_body("ALERT", service_name, host)
+        body = format_body("ALERT", service_name, host, time_zone=time_zone)
         send_email(provider, env, subject, body)
         service_state["alert_sent"] = True
 
@@ -235,6 +258,7 @@ def update_port_state(
     provider: str,
     env: Dict[str, str],
     host: str,
+    time_zone: str,
 ) -> Dict[str, Any]:
     interval_seconds = int(port_config.get("check_interval_seconds", 30))
     fail_restart = int(port_config.get("failures_before_restart", 0))
@@ -256,7 +280,7 @@ def update_port_state(
     if active:
         if port_state.get("status") == "down" and port_state.get("alert_sent"):
             subject = format_subject("RECOVERED", port_label, host)
-            body = format_body("RECOVERED", port_label, host)
+            body = format_body("RECOVERED", port_label, host, time_zone=time_zone)
             send_email(provider, env, subject, body)
         port_state.update(
             {
@@ -286,7 +310,7 @@ def update_port_state(
 
     if consecutive_failures >= fail_alert and not port_state.get("alert_sent"):
         subject = format_subject("ALERT", port_label, host)
-        body = format_body("ALERT", port_label, host)
+        body = format_body("ALERT", port_label, host, time_zone=time_zone)
         send_email(provider, env, subject, body)
         port_state["alert_sent"] = True
 
@@ -304,6 +328,7 @@ def main() -> int:
     state_path = config.get("state_path", "/var/lib/service-monitor/state.json")
     services = config.get("services", {})
     ports = config.get("ports", {})
+    time_zone = config.get("time_zone", "Asia/Taipei")
     if not services:
         if not ports:
             print("No services or ports configured.", file=sys.stderr)
@@ -322,6 +347,7 @@ def main() -> int:
             provider,
             env,
             host,
+            time_zone,
         )
         state[service_name] = updated_state
 
@@ -335,6 +361,7 @@ def main() -> int:
             provider,
             env,
             host,
+            time_zone,
         )
         state[f"port:{port_key}"] = updated_state
 

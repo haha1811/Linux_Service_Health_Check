@@ -42,6 +42,7 @@ sudo cp examples/config.json /etc/service-monitor/config.json
 `config.json` 範例欄位說明：
 
 - `email_provider`: `sendgrid` 或 `smtp`
+- `time_zone`: 時區（預設 `Asia/Taipei`，可設定 `UTC`）
 - `state_path`: 狀態檔路徑，用來記錄連續失敗次數與告警狀態
 - `services`: 以 systemd 服務名稱為 key
   - `check_interval_seconds`: 監控頻率（秒）
