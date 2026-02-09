@@ -68,7 +68,18 @@ def restart_service(service_name: str) -> subprocess.CompletedProcess:
     return run_command(["systemctl", "restart", service_name])
 
 
-def format_subject(prefix: str, service_name: str, host: str) -> str:
+SUBJECT_PREFIXES = {
+    "ALERT": "ALERT",
+    "RECOVERED": "RECOVERED",
+}
+
+
+def subject_prefix(status: str) -> str:
+    return SUBJECT_PREFIXES.get(status, status)
+
+
+def format_subject(status: str, service_name: str, host: str) -> str:
+    prefix = subject_prefix(status)
     return f"[{prefix}] {service_name} on {host}"
 
 
